@@ -18,6 +18,7 @@ import knn_scorer
 app = Flask(__name__)
 
 DATABASE_URL           = os.environ.get("DATABASE_URL")
+GEMINI_API_KEY         = os.environ.get("GEMINI_API_KEY", "")
 WEBFLOW_WEBHOOK_SECRET = os.environ.get("WEBFLOW_WEBHOOK_SECRET", "")
 RESEND_API_KEY         = os.environ.get("RESEND_API_KEY", "")
 OUTREACH_FROM_EMAIL    = os.environ.get("OUTREACH_FROM_EMAIL", "hello@example.com")
