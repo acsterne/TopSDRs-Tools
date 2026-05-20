@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>TopSDRs Tools — How It Works</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f8fafc; color: #1e293b; padding: 48px 24px; }
+  h1 { text-align: center; font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .subtitle { text-align: center; color: #64748b; font-size: 14px; margin-bottom: 48px; }
+
+  .flow { display: flex; flex-direction: column; align-items: center; gap: 0; max-width: 680px; margin: 0 auto; }
+
+  .step { width: 100%; background: white; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 16px 20px; display: flex; align-items: flex-start; gap: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .step-icon { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+  .step-body { flex: 1; }
+  .step-title { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+  .step-desc { font-size: 13px; color: #64748b; line-height: 1.5; }
+  .step-tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 99px; margin-top: 5px; }
+
+  .arrow { display: flex; align-items: center; justify-content: center; height: 32px; color: #94a3b8; font-size: 20px; }
+
+  .gate { width: 100%; background: #fefce8; border: 1.5px solid #fde68a; border-radius: 12px; padding: 14px 18px; display: flex; align-items: flex-start; gap: 12px; }
+  .gate-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+  .gate-body .step-title { color: #92400e; }
+  .gate-body .step-desc { color: #78350f; }
+
+  .fork { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .fork-branch { background: white; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; }
+  .fork-branch.yes { border-color: #bbf7d0; background: #f0fdf4; }
+  .fork-branch.no  { border-color: #fecaca; background: #fef2f2; }
+  .fork-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+  .fork-branch.yes .fork-label { color: #16a34a; }
+  .fork-branch.no  .fork-label { color: #dc2626; }
+  .fork-text { font-size: 13px; color: #475569; line-height: 1.4; }
+
+  .color-webflow  { background: #dbeafe; }
+  .color-db       { background: #ede9fe; }
+  .color-gemini   { background: #d1fae5; }
+  .color-score    { background: #fef3c7; }
+  .color-ui       { background: #e0f2fe; }
+  .color-email    { background: #fce7f3; }
+  .color-airtable { background: #dcfce7; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 40px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #64748b; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<h1>TopSDRs Tools — How It Works</h1>
+<p class="subtitle">From Webflow form submission to Airtable CRM entry</p>
+
+<div class="flow">
+
+  <!-- Step 1 -->
+  <div class="step">
+    <div class="step-icon color-webflow">📋</div>
+    <div class="step-body">
+      <div class="step-title">Candidate submits Webflow intake form</div>
+      <div class="step-desc">Name, LinkedIn, college, grad year, current company + title, NYC openness, how they found TopSDRs, optional message.</div>
+      <span class="step-tag" style="background:#dbeafe;color:#1d4ed8">Webflow</span>
+    </div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <!-- Step 2 -->
+  <div class="step">
+    <div class="step-icon color-db">🗄️</div>
+    <div class="step-body">
+      <div class="step-title">Webhook fires → saved to PostgreSQL</div>
+      <div class="step-desc">Webflow POSTs to <code>/webhook/webflow</code> on Railway. All form fields parsed and stored. Background processing starts immediately.</div>
+      <span class="step-tag" style="background:#ede9fe;color:#6d28d9">Railway + Postgres</span>
+    </div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <!-- Step 3 -->
+  <div class="gate">
+    <div class="gate-icon">🚧</div>
+    <div class="gate-body">
+      <div class="step-title">Hard pre-filters (instant, no LLM needed)</div>
+      <div class="step-desc">Grad year 2017 or earlier · Explicitly not open to NYC · <br>Any of these → auto <strong>Polite Decline</strong>, skip remaining steps.</div>
+    </div>
+  </div>
+
+  <div class="arrow">↓ passes</div>
+
+  <!-- Step 4 -->
+  <div class="step">
+    <div class="step-icon color-gemini">✨</div>
+    <div class="step-body">
+      <div class="step-title">Gemini enriches + embeds the profile</div>
+      <div class="step-desc">Gemini 2.5 Flash rewrites the raw form data into a structured screening summary (school, employer pedigree, location, tenure, athlete signal, message quality). That summary is then embedded as a 3072-dimension vector.</div>
+      <span class="step-tag" style="background:#d1fae5;color:#065f46">Gemini 2.5 Flash</span>
+    </div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <!-- Step 5 -->
+  <div class="step">
+    <div class="step-icon color-score">🎯</div>
+    <div class="step-body">
+      <div class="step-title">Rubric scoring → Tier assigned</div>
+      <div class="step-desc">Gemini applies the full SDR rubric: pedigree, location, grad year, tenure flags, background fit, athlete signal, message field asymmetry. kNN compares against past labeled candidates for calibration.</div>
+      <span class="step-tag" style="background:#fef3c7;color:#92400e">Gemini 2.5 Flash + kNN</span>
+    </div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <!-- Fork -->
+  <div class="fork">
+    <div class="fork-branch yes">
+      <div class="fork-label">✓ Strong Intro / Weak Intro</div>
+      <div class="fork-text">Top school + brand employer, NYC-ready, right grad year. Surfaces in the outreach queue.</div>
+    </div>
+    <div class="fork-branch no">
+      <div class="fork-label">✗ Nurture / Decline / Skip</div>
+      <div class="fork-text">Wrong background, too senior, bad location, spam. Stored but not queued for outreach.</div>
+    </div>
+  </div>
+
+  <div class="arrow">↓ strong/weak intro only</div>
+
+  <!-- Step 6 -->
+  <div class="step">
+    <div class="step-icon color-ui">👀</div>
+    <div class="step-body">
+      <div class="step-title">Andrew reviews in the outreach queue</div>
+      <div class="step-desc">Candidates appear in <code>/outreach</code>, sorted by tier. Hover to see the full profile + tier rationale. Strong Intros shown first.</div>
+      <span class="step-tag" style="background:#e0f2fe;color:#0369a1">TopSDRs UI</span>
+    </div>
+  </div>
+
+  <div class="arrow">↓ clicks "Compose &amp; Send"</div>
+
+  <!-- Step 7 -->
+  <div class="step">
+    <div class="step-icon color-email">✉️</div>
+    <div class="step-body">
+      <div class="step-title">Email pre-filled → Andrew edits → sends</div>
+      <div class="step-desc">Standard template pre-populated with the candidate's first name and Calendly link. Andrew edits if needed, clicks Send. Delivered via Resend.</div>
+      <span class="step-tag" style="background:#fce7f3;color:#9d174d">Resend</span>
+    </div>
+  </div>
+
+  <div class="arrow">↓ on send</div>
+
+  <!-- Step 8 -->
+  <div class="step">
+    <div class="step-icon color-airtable">📊</div>
+    <div class="step-body">
+      <div class="step-title">Record written to Airtable CRM</div>
+      <div class="step-desc">Name, LinkedIn, school, tier, rationale, outreach subject, and timestamp synced to Airtable automatically. Andrew's CRM stays current without any manual entry.</div>
+      <span class="step-tag" style="background:#dcfce7;color:#15803d">Airtable</span>
+    </div>
+  </div>
+
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#dbeafe"></div>Webflow</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ede9fe"></div>Railway + Postgres</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#d1fae5"></div>Gemini 2.5 Flash</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#fce7f3"></div>Resend</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#dcfce7"></div>Airtable</div>
+</div>
+
+</body>
+</html>

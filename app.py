@@ -1,6 +1,6 @@
 """
 TopSDRs Tools — Flask app
-Webflow webhook → Postgres → embed → kNN score → outreach approval → Resend
+Webflow webhook → Postgres → Gemini embed + rubric score → outreach queue → Resend
 """
 import hashlib
 import hmac
@@ -8,11 +8,10 @@ import json
 import os
 import threading
 
-import anthropic
 import psycopg2
 import psycopg2.extras
 import resend
-from flask import Flask, abort, flash, jsonify, redirect, render_template, request, url_for
+from flask import Flask, abort, jsonify, redirect, render_template, request, url_for
 
 import knn_scorer
 
@@ -26,8 +25,25 @@ CALENDLY_LINK          = os.environ.get("CALENDLY_LINK", "")
 AIRTABLE_API_KEY       = os.environ.get("AIRTABLE_API_KEY", "")
 AIRTABLE_BASE_ID       = os.environ.get("AIRTABLE_BASE_ID", "")
 AIRTABLE_TABLE_NAME    = os.environ.get("AIRTABLE_TABLE_NAME", "Candidates")
+OUTREACH_SENDER_NAME   = os.environ.get("OUTREACH_SENDER_NAME", "Andrew")
 
 resend.api_key = RESEND_API_KEY
+
+
+def _outreach_template(candidate: dict) -> tuple[str, str]:
+    """Standard outreach email — recruiter edits before sending."""
+    name      = (candidate.get("full_name") or "").split()[0] or "there"
+    calendly  = CALENDLY_LINK or "[CALENDLY LINK]"
+    subject   = f"Quick intro — TopSDRs"
+    body      = (
+        f"Hi {name},\n\n"
+        f"Your background caught our eye — we work exclusively with top SDR candidates "
+        f"and think you could be a strong fit for some of the roles we place.\n\n"
+        f"Would love to connect for a quick 15-minute intro call. "
+        f"Here's a link to find a time: {calendly}\n\n"
+        f"Best,\n{OUTREACH_SENDER_NAME}\nTopSDRs"
+    )
+    return subject, body
 
 
 # ---------------------------------------------------------------------------
@@ -397,39 +413,6 @@ def _write_to_airtable(candidate: dict):
         print(f"[airtable] write failed: {e}")
 
 
-def _draft_outreach_email(candidate: dict) -> tuple[str, str]:
-    """Ask Claude to draft a personalized outreach email. Returns (subject, body)."""
-    client = anthropic.Anthropic()
-    profile = candidate.get("enriched_text") or candidate.get("full_name") or "the candidate"
-    calendly = CALENDLY_LINK or "[CALENDLY LINK]"
-    msg = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=400,
-        messages=[{
-            "role": "user",
-            "content": f"""Write a short, warm outreach email to an SDR candidate from a recruiter.
-
-Candidate profile:
-{profile}
-
-Rules:
-- 3–4 sentences max, no fluff
-- Reference something specific from their profile (role, experience, tools)
-- End with a clear CTA: book a 15-min call via this Calendly link: {calendly}
-- Do not use the word "excited" or "passionate"
-- Plain text only, no markdown, no subject line in the body
-
-Return JSON with exactly two keys: "subject" and "body"."""
-        }]
-    )
-    import re
-    text = msg.content[0].text.strip()
-    # Strip markdown code fences if present
-    text = re.sub(r"^```(?:json)?\s*", "", text)
-    text = re.sub(r"\s*```$", "", text)
-    parsed = json.loads(text)
-    return parsed["subject"], parsed["body"]
-
 
 @app.route("/outreach")
 def outreach_queue():
@@ -455,9 +438,9 @@ def outreach_queue():
     return render_template("outreach.html", queue=queue, sent_count=sent_count)
 
 
-@app.route("/outreach/<int:candidate_id>/draft", methods=["POST"])
-def outreach_draft(candidate_id):
-    """Generate a Claude email draft for a candidate."""
+@app.route("/outreach/<int:candidate_id>/compose")
+def outreach_compose(candidate_id):
+    """Pre-fill the standard email template for a candidate."""
     conn = get_db()
     cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("SELECT * FROM candidates WHERE id = %s", (candidate_id,))
@@ -466,17 +449,15 @@ def outreach_draft(candidate_id):
         abort(404)
     candidate = dict(row)
     cur.close()
-
-    subject, body = _draft_outreach_email(candidate)
-
-    cur2 = conn.cursor()
-    cur2.execute("""
-        UPDATE candidates SET outreach_subject = %s, outreach_body = %s WHERE id = %s
-    """, (subject, body, candidate_id))
-    conn.commit()
-    cur2.close()
     conn.close()
-    return redirect(url_for("outreach_review", candidate_id=candidate_id))
+
+    # Pre-fill template if not already drafted
+    if not candidate.get("outreach_subject"):
+        subject, body = _outreach_template(candidate)
+        candidate["outreach_subject"] = subject
+        candidate["outreach_body"]    = body
+
+    return render_template("outreach_review.html", candidate=candidate)
 
 
 @app.route("/outreach/<int:candidate_id>/review")

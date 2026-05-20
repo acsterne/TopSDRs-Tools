@@ -26,17 +26,10 @@
       <span class="text-sm font-semibold {% if (c.label or c.fit_score) >= 7 %}text-emerald-600{% else %}text-amber-500{% endif %}">
         {{ c.label or c.fit_score }}/10
       </span>
-      {% if c.outreach_body %}
-        <a href="/outreach/{{ c.id }}/review"
-           class="bg-indigo-600 text-white text-sm px-3 py-1.5 rounded hover:bg-indigo-700">Review &amp; Send</a>
-      {% else %}
-        <form method="POST" action="/outreach/{{ c.id }}/draft">
-          <button type="submit"
-                  class="bg-white border border-gray-300 text-gray-700 text-sm px-3 py-1.5 rounded hover:bg-gray-50">
-            Draft email
-          </button>
-        </form>
-      {% endif %}
+      <a href="/outreach/{{ c.id }}/compose"
+         class="bg-indigo-600 text-white text-sm px-3 py-1.5 rounded hover:bg-indigo-700">
+        Compose &amp; Send
+      </a>
     </div>
   </div>
   {% endfor %}
