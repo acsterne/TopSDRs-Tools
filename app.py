@@ -532,6 +532,7 @@ def outreach_send(candidate_id):
 # Boot
 # ---------------------------------------------------------------------------
 
+_migrate()  # runs on gunicorn import and local dev alike
+
 if __name__ == "__main__":
-    _migrate()
     app.run(debug=True, port=5001)
