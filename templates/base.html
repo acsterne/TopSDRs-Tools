@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}TopSDRs Tools{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen">
+  <nav class="bg-white border-b border-gray-200 px-6 py-3 flex gap-6 text-sm font-medium">
+    <a href="/" class="text-indigo-600 hover:text-indigo-800">Home</a>
+    <a href="/candidates" class="text-gray-600 hover:text-gray-900">Candidates</a>
+    <a href="/label" class="text-gray-600 hover:text-gray-900">Label</a>
+  </nav>
+  <main class="max-w-5xl mx-auto px-6 py-8">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

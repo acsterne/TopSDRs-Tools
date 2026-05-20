@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}TopSDRs — Home{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">TopSDRs Candidate Screener</h1>
+
+<div class="grid grid-cols-3 gap-4 mb-8">
+  <div class="bg-white rounded-lg border p-4">
+    <div class="text-3xl font-bold text-indigo-600">{{ stats.total }}</div>
+    <div class="text-sm text-gray-500 mt-1">Total Candidates</div>
+  </div>
+  <div class="bg-white rounded-lg border p-4">
+    <div class="text-3xl font-bold text-amber-500">{{ stats.new_count }}</div>
+    <div class="text-sm text-gray-500 mt-1">Awaiting Review</div>
+  </div>
+  <div class="bg-white rounded-lg border p-4">
+    <div class="text-3xl font-bold text-emerald-600">{{ stats.labeled_count }}</div>
+    <div class="text-sm text-gray-500 mt-1">Labeled</div>
+  </div>
+</div>
+
+{% if stats.new_count > 0 %}
+<div class="bg-indigo-50 border border-indigo-200 rounded-lg px-5 py-4 mb-8 flex items-center justify-between">
+  <span class="text-indigo-800 font-medium">{{ stats.new_count }} candidate{% if stats.new_count != 1 %}s{% endif %} ready to label</span>
+  <a href="/label" class="bg-indigo-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-indigo-700">Start labeling →</a>
+</div>
+{% endif %}
+
+<h2 class="text-lg font-semibold mb-3">Recent Candidates</h2>
+<div class="bg-white rounded-lg border divide-y">
+  {% for c in recent %}
+  <a href="/candidates/{{ c.id }}" class="flex items-center justify-between px-4 py-3 hover:bg-gray-50">
+    <div>
+      <span class="font-medium">{{ c.full_name or '(no name)' }}</span>
+      <span class="text-sm text-gray-400 ml-2">{{ c.email or '' }}</span>
+    </div>
+    <div class="flex items-center gap-3">
+      {% if c.label %}
+        <span class="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">Label: {{ c.label }}</span>
+      {% elif c.fit_score %}
+        <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">Score: {{ c.fit_score }}</span>
+      {% endif %}
+      <span class="text-xs text-gray-400">{{ c.status }}</span>
+    </div>
+  </a>
+  {% else %}
+  <div class="px-4 py-6 text-center text-gray-400 text-sm">No candidates yet — waiting for Webflow submissions.</div>
+  {% endfor %}
+</div>
+{% endblock %}

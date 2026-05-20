@@ -1,0 +1,294 @@
+"""
+TopSDRs Tools — Flask app
+Webflow webhook → Postgres → embed → kNN score → review UI
+"""
+import hashlib
+import hmac
+import json
+import os
+import threading
+
+import psycopg2
+import psycopg2.extras
+from flask import Flask, abort, jsonify, redirect, render_template, request, url_for
+
+import knn_scorer
+
+app = Flask(__name__)
+
+DATABASE_URL           = os.environ.get("DATABASE_URL")
+WEBFLOW_WEBHOOK_SECRET = os.environ.get("WEBFLOW_WEBHOOK_SECRET", "")
+
+
+# ---------------------------------------------------------------------------
+# DB helpers
+# ---------------------------------------------------------------------------
+
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    return conn
+
+
+def _migrate():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(open("schema.sql").read())
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Background scoring
+# ---------------------------------------------------------------------------
+
+def _rescore_all_unlabeled(skip_id=None):
+    """Re-score every unreviewed candidate via kNN. Runs in a background thread."""
+    try:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT c.id, c.full_name, c.embedding
+              FROM candidates c
+             WHERE c.embedding IS NOT NULL
+               AND NOT EXISTS (
+                   SELECT 1 FROM candidate_feedback cf WHERE cf.candidate_id = c.id
+               )
+               AND (%s IS NULL OR c.id <> %s)
+        """, (skip_id, skip_id))
+        unlabeled = cur.fetchall()
+
+        cur.execute("""
+            SELECT c.id, c.full_name, c.embedding, cf.label
+              FROM candidates c
+              JOIN candidate_feedback cf ON cf.candidate_id = c.id
+             WHERE c.embedding IS NOT NULL
+        """)
+        labeled = [
+            {"id": r["id"], "full_name": r["full_name"],
+             "embedding": list(r["embedding"]), "label": r["label"]}
+            for r in cur.fetchall()
+        ]
+
+        updates = []
+        for row in unlabeled:
+            score, rationale = knn_scorer.knn_score_from_fixtures(
+                list(row["embedding"]), labeled
+            )
+            if score is not None:
+                updates.append((score, rationale, row["id"]))
+
+        if updates:
+            psycopg2.extras.execute_values(
+                cur,
+                "UPDATE candidates SET fit_score = data.score, fit_rationale = data.rationale "
+                "FROM (VALUES %s) AS data(score, rationale, id) WHERE candidates.id = data.id",
+                updates,
+                template="(%s, %s, %s)"
+            )
+            conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"[rescore] error: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Webflow webhook
+# ---------------------------------------------------------------------------
+
+@app.route("/webhook/webflow", methods=["POST"])
+def webflow_webhook():
+    # Verify signature if secret is set
+    if WEBFLOW_WEBHOOK_SECRET:
+        sig = request.headers.get("X-Webflow-Signature", "")
+        expected = hmac.new(
+            WEBFLOW_WEBHOOK_SECRET.encode(), request.data, hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(sig, expected):
+            abort(401)
+
+    payload = request.get_json(force=True) or {}
+    # Webflow wraps form data under "data" key
+    form_data = payload.get("data", payload)
+
+    full_name = form_data.get("Name") or form_data.get("full_name") or form_data.get("name")
+    email     = form_data.get("Email") or form_data.get("email")
+
+    conn = get_db()
+    cur  = conn.cursor()
+    cur.execute("""
+        INSERT INTO candidates (full_name, email, form_data)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (email) DO UPDATE
+            SET full_name  = EXCLUDED.full_name,
+                form_data  = EXCLUDED.form_data,
+                updated_at = NOW()
+        RETURNING id
+    """, (full_name, email, json.dumps(form_data)))
+    candidate_id = cur.fetchone()[0]
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    # Enrich + embed in background
+    threading.Thread(target=_enrich_and_embed, args=(candidate_id,), daemon=True).start()
+
+    return jsonify({"ok": True, "id": candidate_id})
+
+
+def _enrich_and_embed(candidate_id: int):
+    try:
+        conn = get_db()
+        cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT * FROM candidates WHERE id = %s", (candidate_id,))
+        c = dict(cur.fetchone())
+
+        enriched = knn_scorer.gemini_enrich(c)
+        c["enriched_text"] = enriched
+        text = knn_scorer.candidate_to_text(c)
+        embedding = knn_scorer.gemini_embed(text)
+
+        score, rationale = None, None
+        if embedding:
+            score, rationale = knn_scorer.knn_score(embedding, conn)
+
+        cur2 = conn.cursor()
+        cur2.execute("""
+            UPDATE candidates
+               SET enriched_text  = %s,
+                   embedding      = %s,
+                   embedded_at    = NOW(),
+                   fit_score      = %s,
+                   fit_rationale  = %s,
+                   updated_at     = NOW()
+             WHERE id = %s
+        """, (enriched, embedding, score, rationale, candidate_id))
+        conn.commit()
+        cur.close()
+        cur2.close()
+        conn.close()
+    except Exception as e:
+        print(f"[enrich_embed] candidate {candidate_id}: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
+@app.route("/")
+def home():
+    conn = get_db()
+    cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
+        SELECT COUNT(*) AS total,
+               COUNT(*) FILTER (WHERE status = 'new') AS new_count,
+               COUNT(cf.candidate_id) AS labeled_count
+          FROM candidates c
+     LEFT JOIN candidate_feedback cf ON cf.candidate_id = c.id
+    """)
+    stats = dict(cur.fetchone())
+    cur.execute("""
+        SELECT c.*, cf.label
+          FROM candidates c
+     LEFT JOIN candidate_feedback cf ON cf.candidate_id = c.id
+         ORDER BY c.created_at DESC
+         LIMIT 10
+    """)
+    recent = [dict(r) for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return render_template("home.html", stats=stats, recent=recent)
+
+
+@app.route("/candidates")
+def candidates():
+    conn = get_db()
+    cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
+        SELECT c.*, cf.label
+          FROM candidates c
+     LEFT JOIN candidate_feedback cf ON cf.candidate_id = c.id
+         ORDER BY c.fit_score DESC NULLS LAST, c.created_at DESC
+    """)
+    rows = [dict(r) for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return render_template("candidates.html", candidates=rows)
+
+
+@app.route("/label")
+def label():
+    """Card-stack labeling UI — show next unlabeled candidate."""
+    conn = get_db()
+    cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
+        SELECT c.*
+          FROM candidates c
+         WHERE NOT EXISTS (
+             SELECT 1 FROM candidate_feedback cf WHERE cf.candidate_id = c.id
+         )
+           AND c.embedding IS NOT NULL
+         ORDER BY c.fit_score DESC NULLS LAST, c.created_at DESC
+         LIMIT 1
+    """)
+    row = cur.fetchone()
+    candidate = dict(row) if row else None
+    cur.execute("SELECT COUNT(*) AS n FROM candidate_feedback")
+    label_count = cur.fetchone()["n"]
+    cur.close()
+    conn.close()
+    return render_template("label.html", candidate=candidate, label_count=label_count)
+
+
+@app.route("/label/submit", methods=["POST"])
+def label_submit():
+    candidate_id = int(request.form["candidate_id"])
+    label        = int(request.form["label"])
+    notes        = request.form.get("notes", "").strip() or None
+
+    conn = get_db()
+    cur  = conn.cursor()
+    cur.execute("""
+        INSERT INTO candidate_feedback (candidate_id, label, notes)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (candidate_id) DO UPDATE
+            SET label = EXCLUDED.label,
+                notes = EXCLUDED.notes
+    """, (candidate_id, label, notes))
+    # Mark the candidate as reviewed
+    cur.execute("UPDATE candidates SET status = 'reviewed' WHERE id = %s", (candidate_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    threading.Thread(target=_rescore_all_unlabeled, daemon=True).start()
+    return redirect(url_for("label"))
+
+
+@app.route("/candidates/<int:candidate_id>")
+def candidate_detail(candidate_id):
+    conn = get_db()
+    cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
+        SELECT c.*, cf.label, cf.notes AS label_notes
+          FROM candidates c
+     LEFT JOIN candidate_feedback cf ON cf.candidate_id = c.id
+         WHERE c.id = %s
+    """, (candidate_id,))
+    row = cur.fetchone()
+    if not row:
+        abort(404)
+    cur.close()
+    conn.close()
+    return render_template("candidate_detail.html", candidate=dict(row))
+
+
+# ---------------------------------------------------------------------------
+# Boot
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    _migrate()
+    app.run(debug=True, port=5001)
