@@ -23,6 +23,9 @@ WEBFLOW_WEBHOOK_SECRET = os.environ.get("WEBFLOW_WEBHOOK_SECRET", "")
 RESEND_API_KEY         = os.environ.get("RESEND_API_KEY", "")
 OUTREACH_FROM_EMAIL    = os.environ.get("OUTREACH_FROM_EMAIL", "hello@example.com")
 CALENDLY_LINK          = os.environ.get("CALENDLY_LINK", "")
+AIRTABLE_API_KEY       = os.environ.get("AIRTABLE_API_KEY", "")
+AIRTABLE_BASE_ID       = os.environ.get("AIRTABLE_BASE_ID", "")
+AIRTABLE_TABLE_NAME    = os.environ.get("AIRTABLE_TABLE_NAME", "Candidates")
 
 resend.api_key = RESEND_API_KEY
 
@@ -120,20 +123,63 @@ def webflow_webhook():
     # Webflow wraps form data under "data" key
     form_data = payload.get("data", payload)
 
-    full_name = form_data.get("Name") or form_data.get("full_name") or form_data.get("name")
-    email     = form_data.get("Email") or form_data.get("email")
+    def _get(keys):
+        for k in keys:
+            v = form_data.get(k)
+            if v is not None and str(v).strip():
+                return str(v).strip()
+        return None
+
+    full_name       = _get(["Name", "name", "full_name", "Full Name"])
+    email           = _get(["Email", "email"])
+    linkedin_url    = _get(["LinkedIn", "linkedin", "linkedin_url", "LinkedIn URL"])
+    college         = _get(["College", "college", "School", "school"])
+    grad_year_raw   = _get(["Graduation year", "graduation_year", "Grad Year", "grad_year"])
+    graduation_year = int(grad_year_raw) if grad_year_raw and grad_year_raw.isdigit() else None
+    current_company = _get(["Current Company", "current_company", "Company"])
+    current_title   = _get(["Current title", "current_title", "Title"])
+    how_found       = _get(["How you found us", "how_found", "How did you find us"])
+    message         = _get(["Optional Message", "message", "Message", "Why TopSDRs"])
+    candidate_type  = _get(["Are you a candidate looking or company hiring",
+                             "candidate_type", "Type"])
+
+    # NYC checkbox — Webflow sends "true"/"false" strings or booleans
+    nyc_raw = form_data.get("are you in or open to relocating to NYC",
+                form_data.get("nyc_open",
+                form_data.get("NYC", None)))
+    if nyc_raw is None:
+        nyc_open = None
+    elif isinstance(nyc_raw, bool):
+        nyc_open = nyc_raw
+    else:
+        nyc_open = str(nyc_raw).lower() in ("true", "yes", "1")
 
     conn = get_db()
     cur  = conn.cursor()
     cur.execute("""
-        INSERT INTO candidates (full_name, email, form_data)
-        VALUES (%s, %s, %s)
+        INSERT INTO candidates (
+            full_name, email, linkedin_url, college, graduation_year,
+            current_company, current_title, nyc_open, how_found, message,
+            candidate_type, form_data
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (email) DO UPDATE
-            SET full_name  = EXCLUDED.full_name,
-                form_data  = EXCLUDED.form_data,
-                updated_at = NOW()
+            SET full_name       = EXCLUDED.full_name,
+                linkedin_url    = EXCLUDED.linkedin_url,
+                college         = EXCLUDED.college,
+                graduation_year = EXCLUDED.graduation_year,
+                current_company = EXCLUDED.current_company,
+                current_title   = EXCLUDED.current_title,
+                nyc_open        = EXCLUDED.nyc_open,
+                how_found       = EXCLUDED.how_found,
+                message         = EXCLUDED.message,
+                candidate_type  = EXCLUDED.candidate_type,
+                form_data       = EXCLUDED.form_data,
+                updated_at      = NOW()
         RETURNING id
-    """, (full_name, email, json.dumps(form_data)))
+    """, (full_name, email, linkedin_url, college, graduation_year,
+          current_company, current_title, nyc_open, how_found, message,
+          candidate_type, json.dumps(form_data)))
     candidate_id = cur.fetchone()[0]
     conn.commit()
     cur.close()
@@ -152,26 +198,44 @@ def _enrich_and_embed(candidate_id: int):
         cur.execute("SELECT * FROM candidates WHERE id = %s", (candidate_id,))
         c = dict(cur.fetchone())
 
+        # Hard pre-filter before any LLM calls
+        passes, filter_reason = knn_scorer.pre_filter(c)
+        if not passes:
+            cur2 = conn.cursor()
+            cur2.execute("""
+                UPDATE candidates
+                   SET tier = 'polite_decline', tier_rationale = %s, updated_at = NOW()
+                 WHERE id = %s
+            """, (filter_reason, candidate_id))
+            conn.commit()
+            cur2.close()
+            cur.close()
+            conn.close()
+            return
+
+        # Enrich → embed → kNN neighbors
         enriched = knn_scorer.gemini_enrich(c)
         c["enriched_text"] = enriched
         text = knn_scorer.candidate_to_text(c)
         embedding = knn_scorer.gemini_embed(text)
+        neighbors = knn_scorer.knn_neighbors_from_db(embedding, conn) if embedding else ""
 
-        score, rationale = None, None
-        if embedding:
-            score, rationale = knn_scorer.knn_score(embedding, conn)
+        # Apply rubric via LLM
+        tier, rationale, message_class = knn_scorer.score_candidate_rubric(c)
 
         cur2 = conn.cursor()
         cur2.execute("""
             UPDATE candidates
                SET enriched_text  = %s,
+                   message_class  = %s,
                    embedding      = %s,
                    embedded_at    = NOW(),
-                   fit_score      = %s,
-                   fit_rationale  = %s,
+                   tier           = %s,
+                   tier_rationale = %s,
+                   knn_neighbors  = %s,
                    updated_at     = NOW()
              WHERE id = %s
-        """, (enriched, embedding, score, rationale, candidate_id))
+        """, (enriched, message_class, embedding, tier, rationale, neighbors, candidate_id))
         conn.commit()
         cur.close()
         cur2.close()
@@ -296,7 +360,41 @@ def candidate_detail(candidate_id):
 # Outreach
 # ---------------------------------------------------------------------------
 
-OUTREACH_SCORE_THRESHOLD = 7
+# Tiers that surface in the outreach queue
+OUTREACH_TIERS = {"strong_intro", "weak_intro"}
+
+
+def _write_to_airtable(candidate: dict):
+    """Write candidate + outreach record to Airtable CRM. Silently skips if not configured."""
+    if not AIRTABLE_API_KEY or not AIRTABLE_BASE_ID:
+        return
+    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_TABLE_NAME}"
+    fields = {
+        "Name":             candidate.get("full_name") or "",
+        "Email":            candidate.get("email") or "",
+        "LinkedIn":         candidate.get("linkedin_url") or "",
+        "College":          candidate.get("college") or "",
+        "Graduation Year":  str(candidate["graduation_year"]) if candidate.get("graduation_year") else "",
+        "Current Company":  candidate.get("current_company") or "",
+        "Current Title":    candidate.get("current_title") or "",
+        "NYC Open":         "Yes" if candidate.get("nyc_open") else "No",
+        "Tier":             knn_scorer.TIER_LABELS.get(candidate.get("tier", ""), candidate.get("tier", "")),
+        "Tier Rationale":   candidate.get("tier_rationale") or "",
+        "Outreach Subject": candidate.get("outreach_subject") or "",
+        "Outreach Sent":    candidate.get("outreach_sent_at").isoformat() if candidate.get("outreach_sent_at") else "",
+        "Source":           candidate.get("how_found") or "",
+    }
+    # Remove empty strings to keep Airtable clean
+    fields = {k: v for k, v in fields.items() if v}
+    try:
+        requests.post(
+            url,
+            headers={"Authorization": f"Bearer {AIRTABLE_API_KEY}", "Content-Type": "application/json"},
+            json={"fields": fields},
+            timeout=10,
+        )
+    except Exception as e:
+        print(f"[airtable] write failed: {e}")
 
 
 def _draft_outreach_email(candidate: dict) -> tuple[str, str]:
@@ -335,30 +433,26 @@ Return JSON with exactly two keys: "subject" and "body"."""
 
 @app.route("/outreach")
 def outreach_queue():
-    """Candidates scoring ≥ threshold that haven't been contacted yet."""
+    """strong_intro and weak_intro candidates that haven't been contacted yet."""
     conn = get_db()
     cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("""
         SELECT c.*, cf.label
           FROM candidates c
      LEFT JOIN candidate_feedback cf ON cf.candidate_id = c.id
-         WHERE (cf.label >= %s OR (cf.label IS NULL AND c.fit_score >= %s))
+         WHERE c.tier IN ('strong_intro', 'weak_intro')
            AND c.outreach_sent_at IS NULL
            AND c.status != 'rejected'
-         ORDER BY COALESCE(cf.label, c.fit_score) DESC NULLS LAST
-    """, (OUTREACH_SCORE_THRESHOLD, OUTREACH_SCORE_THRESHOLD))
+         ORDER BY CASE c.tier WHEN 'strong_intro' THEN 0 ELSE 1 END,
+                  c.created_at DESC
+    """)
     queue = [dict(r) for r in cur.fetchall()]
 
-    cur.execute("""
-        SELECT COUNT(*) AS sent_count
-          FROM candidates
-         WHERE outreach_sent_at IS NOT NULL
-    """)
-    sent_count = cur.fetchone()["sent_count"]
+    cur.execute("SELECT COUNT(*) AS n FROM candidates WHERE outreach_sent_at IS NOT NULL")
+    sent_count = cur.fetchone()["n"]
     cur.close()
     conn.close()
-    return render_template("outreach.html", queue=queue, sent_count=sent_count,
-                           threshold=OUTREACH_SCORE_THRESHOLD)
+    return render_template("outreach.html", queue=queue, sent_count=sent_count)
 
 
 @app.route("/outreach/<int:candidate_id>/draft", methods=["POST"])
@@ -435,8 +529,16 @@ def outreach_send(candidate_id):
     """, (subject, body, candidate_id))
     conn.commit()
     cur2.close()
+
+    # Refresh candidate dict with sent_at for Airtable
+    cur3 = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur3.execute("SELECT * FROM candidates WHERE id = %s", (candidate_id,))
+    sent_candidate = dict(cur3.fetchone())
+    cur3.close()
     cur.close()
     conn.close()
+
+    threading.Thread(target=_write_to_airtable, args=(sent_candidate,), daemon=True).start()
     return redirect(url_for("outreach_queue"))
 
 

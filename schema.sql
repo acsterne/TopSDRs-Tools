@@ -3,29 +3,40 @@
 
 CREATE TABLE IF NOT EXISTS candidates (
     id              SERIAL PRIMARY KEY,
-    -- Core identity (from Webflow form — fields to be confirmed)
-    full_name       TEXT,
-    email           TEXT UNIQUE,
-    linkedin_url    TEXT,
+
+    -- Intake form fields (Webflow)
+    full_name           TEXT,
+    email               TEXT UNIQUE,
+    linkedin_url        TEXT,
+    college             TEXT,
+    graduation_year     INT,
+    current_company     TEXT,
+    current_title       TEXT,
+    nyc_open            BOOLEAN,        -- "in or open to relocating to NYC"
+    how_found           TEXT,           -- "how you found us"
+    message             TEXT,           -- optional free-text message
+    candidate_type      TEXT,           -- "candidate looking" | "company hiring"
 
     -- Raw form payload (full Webflow submission as JSON)
     form_data       JSONB,
 
-    -- Enrichment
-    enriched_text   TEXT,           -- LLM-rewritten candidate summary for embedding
+    -- Enrichment + embedding
+    enriched_text   TEXT,           -- LLM-rewritten summary shaped for embedding
+    message_class   TEXT,           -- specific | ai_slop | neutral  (classifier on message field)
     embedding       REAL[],         -- Gemini embedding vector (3072 dims)
     embedded_at     TIMESTAMPTZ,
 
     -- Scoring
-    fit_score       INT,            -- 1–10, kNN predicted fit
-    fit_rationale   TEXT,           -- e.g. "Similar to Jane D. (9), John S. (8) [match 84%]"
+    tier            TEXT,           -- strong_intro | weak_intro | nurture | senior_redirect | polite_decline | silent_skip
+    tier_rationale  TEXT,           -- why this tier was assigned
+    knn_neighbors   TEXT,           -- closest labeled candidates (for context)
 
     -- Status
     status          TEXT NOT NULL DEFAULT 'new',  -- new | reviewed | outreach_sent | hired | rejected | archived
 
     -- Outreach
     outreach_subject    TEXT,
-    outreach_body       TEXT,       -- Claude-drafted email, editable before send
+    outreach_body       TEXT,
     outreach_sent_at    TIMESTAMPTZ,
 
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -35,7 +46,8 @@ CREATE TABLE IF NOT EXISTS candidates (
 -- Human labels that drive the kNN — one per candidate
 CREATE TABLE IF NOT EXISTS candidate_feedback (
     candidate_id    INT PRIMARY KEY REFERENCES candidates(id) ON DELETE CASCADE,
-    label           INT NOT NULL,   -- 1–10
+    label           INT NOT NULL,   -- 1–10 (maps to tier: 8–10 strong_intro, 6–7 weak_intro, 4–5 nurture, etc.)
+    tier_override   TEXT,           -- explicit tier override if recruiter disagrees with model
     notes           TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
