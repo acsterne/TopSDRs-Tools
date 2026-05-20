@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}How It Works{% endblock %}
+{% block content %}
+<style>
+  .step { background: white; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 16px 20px; display: flex; align-items: flex-start; gap: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .step-icon { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+  .step-title { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+  .step-desc { font-size: 13px; color: #64748b; line-height: 1.5; }
+  .step-tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 99px; margin-top: 5px; }
+  .arrow { display: flex; align-items: center; justify-content: center; height: 28px; color: #94a3b8; font-size: 18px; }
+  .gate { background: #fefce8; border: 1.5px solid #fde68a; border-radius: 12px; padding: 14px 18px; display: flex; align-items: flex-start; gap: 12px; }
+</style>
+
+<h1 class="text-2xl font-bold mb-2">How It Works</h1>
+<p class="text-sm text-gray-500 mb-8">From Webflow form submission to Airtable CRM entry.</p>
+
+<div class="flex flex-col items-center gap-0 max-w-2xl">
+
+  <div class="step w-full">
+    <div class="step-icon" style="background:#dbeafe">📋</div>
+    <div>
+      <div class="step-title">Candidate submits Webflow intake form</div>
+      <div class="step-desc">Name, LinkedIn, college, grad year, current company + title, NYC openness, how they found TopSDRs, optional message.</div>
+      <span class="step-tag" style="background:#dbeafe;color:#1d4ed8">Webflow</span>
+    </div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step w-full">
+    <div class="step-icon" style="background:#ede9fe">🗄️</div>
+    <div>
+      <div class="step-title">Webhook fires → saved to PostgreSQL</div>
+      <div class="step-desc">Webflow POSTs to <code class="text-xs bg-gray-100 px-1 rounded">/webhook/webflow</code>. All form fields parsed and stored. Background scoring starts immediately.</div>
+      <span class="step-tag" style="background:#ede9fe;color:#6d28d9">Railway + Postgres</span>
+    </div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="gate w-full">
+    <div class="text-lg flex-shrink-0 mt-0.5">🚧</div>
+    <div>
+      <div class="step-title text-amber-800 font-semibold text-sm mb-0.5">Hard pre-filters (no LLM needed)</div>
+      <div class="step-desc text-amber-900">Grad year 2017 or earlier · Not open to NYC → auto <strong>Polite Decline</strong>, skip remaining steps.</div>
+    </div>
+  </div>
+
+  <div class="arrow">↓ passes</div>
+
+  <div class="step w-full">
+    <div class="step-icon" style="background:#d1fae5">✨</div>
+    <div>
+      <div class="step-title">Gemini enriches + embeds the profile</div>
+      <div class="step-desc">Gemini 2.5 Flash rewrites the raw form data into a structured screening summary (school, employer pedigree, location, tenure, athlete signal, message quality), then embeds it as a vector for similarity comparison.</div>
+      <span class="step-tag" style="background:#d1fae5;color:#065f46">Gemini 2.5 Flash</span>
+    </div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step w-full">
+    <div class="step-icon" style="background:#fef3c7">🎯</div>
+    <div>
+      <div class="step-title">Rubric scoring → Tier assigned</div>
+      <div class="step-desc">Gemini applies the SDR rubric: pedigree, location, grad year, tenure flags, background fit, athlete signal, message field asymmetry. kNN compares against past labeled candidates for context.</div>
+      <div class="flex gap-2 flex-wrap mt-2">
+        <span class="step-tag" style="background:#d1fae5;color:#065f46">Strong Intro</span>
+        <span class="step-tag" style="background:#dcfce7;color:#166534">Weak Intro</span>
+        <span class="step-tag" style="background:#fef9c3;color:#854d0e">Nurture</span>
+        <span class="step-tag" style="background:#ffedd5;color:#9a3412">Senior Redirect</span>
+        <span class="step-tag" style="background:#fee2e2;color:#991b1b">Polite Decline</span>
+        <span class="step-tag" style="background:#f1f5f9;color:#475569">Silent Skip</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">↓ strong / weak intro only</div>
+
+  <div class="step w-full">
+    <div class="step-icon" style="background:#e0f2fe">👀</div>
+    <div>
+      <div class="step-title">Andrew reviews in the outreach queue</div>
+      <div class="step-desc">Strong Intro and Weak Intro candidates surface in <a href="/outreach" class="text-indigo-500 hover:underline">/outreach</a>, sorted by tier. Full profile and rationale visible per row.</div>
+      <span class="step-tag" style="background:#e0f2fe;color:#0369a1">This app</span>
+    </div>
+  </div>
+
+  <div class="arrow">↓ clicks Compose &amp; Send</div>
+
+  <div class="step w-full">
+    <div class="step-icon" style="background:#fce7f3">✉️</div>
+    <div>
+      <div class="step-title">Email pre-filled → Andrew edits → sends</div>
+      <div class="step-desc">Standard template pre-populated with the candidate's first name and Calendly link. Editable before sending. Delivered via Resend.</div>
+      <span class="step-tag" style="background:#fce7f3;color:#9d174d">Resend</span>
+    </div>
+  </div>
+
+  <div class="arrow">↓ on send</div>
+
+  <div class="step w-full">
+    <div class="step-icon" style="background:#dcfce7">📊</div>
+    <div>
+      <div class="step-title">Record written to Airtable CRM</div>
+      <div class="step-desc">Name, LinkedIn, school, tier, rationale, outreach subject, and timestamp synced automatically. No manual CRM entry needed.</div>
+      <span class="step-tag" style="background:#dcfce7;color:#15803d">Airtable</span>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

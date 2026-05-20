@@ -289,6 +289,11 @@ def home():
     return render_template("home.html", stats=stats, recent=recent)
 
 
+@app.route("/how-it-works")
+def how_it_works():
+    return render_template("how_it_works.html")
+
+
 @app.route("/candidates")
 def candidates():
     conn = get_db()
