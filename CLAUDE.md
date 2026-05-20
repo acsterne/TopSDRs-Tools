@@ -27,6 +27,8 @@ DATABASE_URL=postgresql://... GEMINI_API_KEY=... RESEND_API_KEY=... \
 - `templates/outreach_review.html` — Review/edit pre-filled standard email before sending
 - `DEPLOY.md` — Full Railway/Resend/Airtable/Webflow setup guide
 - `templates/how_it_works.html` — Public explainer page at `/how-it-works`
+- `templates/import.html` — CSV upload UI at `/import` for loading historical candidates as training data
+- `templates/scorer.html` — Internal explainer at `/scorer` covering rubric, kNN calibration, and backtesting
 - `docs/workflow.html` — Visual flowchart of the full candidate pipeline
 
 ## Workflow
@@ -40,5 +42,7 @@ DATABASE_URL=postgresql://... GEMINI_API_KEY=... RESEND_API_KEY=... \
 8. Recruiter reviews/edits at `/outreach/<id>/compose`, then clicks Send → Resend API delivers it
 9. Outreach status (`pending` / `drafted` / `sent`) tracked on `candidates` table; Airtable synced in background
 
-## TODO
-- Add backfill script for past Webflow submissions
+## Candidate sources
+- `source` column on `candidates`: `webflow` (live form), `historical` (CSV import), `manual`
+- Historical candidates are scored as training data only — never appear in outreach queue, never emailed, never written to Airtable
+- Import via `/import` (CSV upload); backtesting via `/scorer`

@@ -289,9 +289,66 @@ def home():
          LIMIT 10
     """)
     recent = [dict(r) for r in cur.fetchall()]
+
+    # Setup checklist — check env vars + DB state
+    cur.execute("SELECT COUNT(*) AS n FROM candidates WHERE source = 'webflow'")
+    webflow_count = cur.fetchone()["n"]
+    cur.execute("SELECT COUNT(*) AS n FROM candidates WHERE source = 'historical'")
+    historical_count = cur.fetchone()["n"]
+    cur.execute("SELECT COUNT(*) AS n FROM candidate_feedback")
+    label_count = cur.fetchone()["n"]
+
+    checklist = [
+        {
+            "label": "Gemini API key",
+            "done": bool(GEMINI_API_KEY),
+            "action": "Add GEMINI_API_KEY in Railway → Variables (get it free at aistudio.google.com)",
+        },
+        {
+            "label": "Resend API key",
+            "done": bool(RESEND_API_KEY),
+            "action": "Add RESEND_API_KEY in Railway → Variables (sign up at resend.com)",
+        },
+        {
+            "label": "Sender email + name",
+            "done": bool(OUTREACH_FROM_EMAIL and OUTREACH_FROM_EMAIL != "hello@example.com" and OUTREACH_SENDER_NAME),
+            "action": "Set OUTREACH_FROM_EMAIL and OUTREACH_SENDER_NAME in Railway → Variables",
+        },
+        {
+            "label": "Calendly link",
+            "done": bool(CALENDLY_LINK),
+            "action": "Set CALENDLY_LINK in Railway → Variables",
+        },
+        {
+            "label": "Airtable API key",
+            "done": bool(AIRTABLE_API_KEY),
+            "action": "Set AIRTABLE_API_KEY in Railway → Variables (airtable.com/account → Personal access tokens)",
+        },
+        {
+            "label": "Airtable base ID",
+            "done": bool(AIRTABLE_BASE_ID),
+            "action": "Set AIRTABLE_BASE_ID in Railway → Variables (the appXXXXXX from your Airtable base URL)",
+        },
+        {
+            "label": "Webflow webhook connected",
+            "done": webflow_count > 0,
+            "action": "In Webflow → Site Settings → Forms → Webhooks, add your Railway URL + /webhook/webflow",
+        },
+        {
+            "label": "Historical candidates imported",
+            "done": historical_count > 0,
+            "action": "Export your ~70 past inbounds and upload at /import to bootstrap the kNN model",
+        },
+        {
+            "label": "kNN calibrated (20+ labels)",
+            "done": label_count >= 20,
+            "action": f"Label candidates at /label to train the scorer — {label_count}/20 done so far",
+        },
+    ]
+
     cur.close()
     conn.close()
-    return render_template("home.html", stats=stats, recent=recent)
+    return render_template("home.html", stats=stats, recent=recent, checklist=checklist)
 
 
 @app.route("/how-it-works")

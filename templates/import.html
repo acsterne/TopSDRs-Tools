@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Import Historical Candidates{% endblock %}
 {% block content %}
-<h1 class="text-2xl font-bold mb-2">Import Historical Candidates</h1>
-<p class="text-sm text-gray-500 mb-6">Upload a CSV of past inbounds to train the kNN model. These candidates are scored and labeled but <strong>never emailed or written to Airtable</strong> — they're training data only.</p>
+<h1 class="text-2xl font-bold mb-2">Import Historical Candidates for Backtesting</h1>
+<p class="text-sm text-gray-500 mb-6">Upload past inbounds to train the kNN model. These candidates are scored but <strong>never emailed or written to Airtable</strong> — they're training data only.</p>
 
 {% if imported is defined %}
 <div class="bg-emerald-50 border border-emerald-200 rounded-lg px-5 py-4 mb-6">
@@ -15,6 +15,25 @@
 {% if error %}
 <div class="bg-red-50 border border-red-200 rounded-lg px-5 py-3 mb-6 text-sm text-red-700">{{ error }}</div>
 {% endif %}
+
+<div class="max-w-xl bg-blue-50 border border-blue-200 rounded-xl p-5 mb-6">
+  <h2 class="font-semibold text-sm text-blue-800 mb-2">Two ways to import — we don't know your Airtable format yet</h2>
+  <div class="space-y-3 text-sm text-blue-700">
+    <div>
+      <span class="font-medium">Option A — CSV upload (below):</span> Export your candidates table from Airtable as CSV.
+      The importer tries common column name variations but your column names may not match.
+      <strong>Fastest if you share your Airtable field names</strong> — we can hardcode the exact mapping in 5 minutes.
+    </div>
+    <div>
+      <span class="font-medium">Option B — Pull direct from Airtable API:</span> Since your
+      <code class="text-xs bg-blue-100 px-1 rounded">AIRTABLE_API_KEY</code> and
+      <code class="text-xs bg-blue-100 px-1 rounded">AIRTABLE_BASE_ID</code> are already set,
+      we can build a one-click import that reads your base directly — no export needed, no column name guessing.
+      <strong>Best long-term option.</strong> To enable it, share your historical candidates table name
+      and we'll add a second env var <code class="text-xs bg-blue-100 px-1 rounded">AIRTABLE_IMPORT_TABLE</code>.
+    </div>
+  </div>
+</div>
 
 <div class="max-w-xl bg-white rounded-xl border shadow-sm p-6 mb-8">
   <form method="POST" enctype="multipart/form-data">

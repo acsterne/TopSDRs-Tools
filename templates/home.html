@@ -25,6 +25,33 @@
 </div>
 {% endif %}
 
+{% set done_count = checklist | selectattr('done') | list | length %}
+{% set total_count = checklist | length %}
+<div class="mb-8">
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-lg font-semibold">Setup Checklist</h2>
+    <span class="text-sm {% if done_count == total_count %}text-emerald-600 font-medium{% else %}text-gray-400{% endif %}">
+      {{ done_count }}/{{ total_count }} done
+    </span>
+  </div>
+  <div class="bg-white rounded-lg border divide-y">
+    {% for item in checklist %}
+    <div class="flex items-start gap-3 px-4 py-3">
+      {% if item.done %}
+        <span class="text-emerald-500 font-bold mt-0.5 flex-shrink-0">✓</span>
+        <span class="text-sm text-gray-400 line-through">{{ item.label }}</span>
+      {% else %}
+        <span class="text-gray-300 font-bold mt-0.5 flex-shrink-0">○</span>
+        <div>
+          <span class="text-sm font-medium text-gray-700">{{ item.label }}</span>
+          <p class="text-xs text-gray-400 mt-0.5">{{ item.action }}</p>
+        </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
 <h2 class="text-lg font-semibold mb-3">Recent Candidates</h2>
 <div class="bg-white rounded-lg border divide-y">
   {% for c in recent %}
