@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS candidates (
     tier_rationale  TEXT,           -- why this tier was assigned
     knn_neighbors   TEXT,           -- closest labeled candidates (for context)
 
+    -- Source
+    source          TEXT NOT NULL DEFAULT 'webflow',  -- webflow | historical | manual
+
     -- Status
     status          TEXT NOT NULL DEFAULT 'new',  -- new | reviewed | outreach_sent | hired | rejected | archived
 

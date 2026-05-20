@@ -60,6 +60,11 @@ def _migrate():
     conn = get_db()
     cur = conn.cursor()
     cur.execute(open("schema.sql").read())
+    # Additive column migrations for existing databases
+    for ddl in [
+        "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'webflow'",
+    ]:
+        cur.execute(ddl)
     conn.commit()
     cur.close()
     conn.close()
@@ -294,6 +299,91 @@ def how_it_works():
     return render_template("how_it_works.html")
 
 
+@app.route("/scorer")
+def scorer_explained():
+    return render_template("scorer.html")
+
+
+@app.route("/import", methods=["GET", "POST"])
+def import_historical():
+    """CSV import for historical candidates — scored for KNN training, never emailed."""
+    import csv, io
+    if request.method == "GET":
+        return render_template("import.html")
+
+    f = request.files.get("csv_file")
+    if not f:
+        return render_template("import.html", error="No file uploaded.")
+
+    text    = f.read().decode("utf-8-sig")
+    reader  = csv.DictReader(io.StringIO(text))
+    conn    = get_db()
+    cur     = conn.cursor()
+    imported, skipped = 0, 0
+
+    for row in reader:
+        def g(keys):
+            for k in keys:
+                v = row.get(k, "").strip()
+                if v:
+                    return v
+            return None
+
+        full_name       = g(["Name", "Full Name", "name"])
+        email           = g(["Email", "email"])
+        linkedin_url    = g(["LinkedIn", "linkedin_url", "LinkedIn URL"])
+        college         = g(["College", "School", "college"])
+        grad_raw        = g(["Graduation Year", "Grad Year", "graduation_year"])
+        graduation_year = int(grad_raw) if grad_raw and grad_raw.isdigit() else None
+        current_company = g(["Current Company", "Company", "current_company"])
+        current_title   = g(["Current Title", "Title", "current_title"])
+        nyc_raw         = g(["NYC Open", "nyc_open", "NYC"])
+        nyc_open        = nyc_raw.lower() in ("yes", "true", "1") if nyc_raw else None
+        message         = g(["Message", "Optional Message", "message"])
+        how_found       = g(["Source", "How Found", "how_found"])
+
+        if not full_name and not email:
+            skipped += 1
+            continue
+
+        try:
+            cur.execute("""
+                INSERT INTO candidates (
+                    full_name, email, linkedin_url, college, graduation_year,
+                    current_company, current_title, nyc_open, message, how_found,
+                    source
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'historical')
+                ON CONFLICT (email) DO NOTHING
+            """, (full_name, email, linkedin_url, college, graduation_year,
+                  current_company, current_title, nyc_open, message, how_found))
+            if cur.rowcount:
+                imported += 1
+            else:
+                skipped += 1
+        except Exception as e:
+            print(f"[import] row skipped: {e}")
+            skipped += 1
+
+    conn.commit()
+    cur.close()
+
+    # Score all unscored historical candidates in background
+    cur2 = conn.cursor()
+    cur2.execute("""
+        SELECT id FROM candidates
+         WHERE source = 'historical' AND tier IS NULL
+    """)
+    ids = [r[0] for r in cur2.fetchall()]
+    cur2.close()
+    conn.close()
+
+    for cid in ids:
+        threading.Thread(target=_enrich_and_embed, args=(cid,), daemon=True).start()
+
+    return render_template("import.html", imported=imported, skipped=skipped, total=imported+skipped)
+
+
 @app.route("/candidates")
 def candidates():
     conn = get_db()
@@ -431,6 +521,7 @@ def outreach_queue():
          WHERE c.tier IN ('strong_intro', 'weak_intro')
            AND c.outreach_sent_at IS NULL
            AND c.status != 'rejected'
+           AND c.source != 'historical'
          ORDER BY CASE c.tier WHEN 'strong_intro' THEN 0 ELSE 1 END,
                   c.created_at DESC
     """)

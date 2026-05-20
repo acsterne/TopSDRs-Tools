@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}How the Scorer Works{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-2">How the Scorer Works</h1>
+<p class="text-sm text-gray-500 mb-8">For Andrew — how to train it, backtest it, and correct it when it's wrong.</p>
+
+<div class="max-w-2xl space-y-8">
+
+  <!-- Architecture -->
+  <div class="bg-white rounded-xl border shadow-sm p-6">
+    <h2 class="font-semibold text-base mb-3">Two layers, not one</h2>
+    <p class="text-sm text-gray-600 mb-4">The scorer is not pure kNN. It's two passes working together:</p>
+    <div class="space-y-3">
+      <div class="flex gap-3">
+        <span class="text-lg flex-shrink-0">1️⃣</span>
+        <div>
+          <div class="text-sm font-medium">Rubric scoring (Gemini)</div>
+          <div class="text-sm text-gray-500">Gemini reads the candidate profile and applies the explicit SDR rubric — pedigree, location, grad year, tenure, background fit, athlete signal, message quality. Outputs a tier. Works from day one with zero prior candidates.</div>
+        </div>
+      </div>
+      <div class="flex gap-3">
+        <span class="text-lg flex-shrink-0">2️⃣</span>
+        <div>
+          <div class="text-sm font-medium">kNN calibration</div>
+          <div class="text-sm text-gray-500">Compares the new candidate to your labeled historical candidates by vector similarity. Shows who they're most like and how those people were tiered. Improves over time as you label more.</div>
+        </div>
+      </div>
+    </div>
+    <div class="mt-4 bg-gray-50 rounded-lg p-3 text-xs text-gray-500">
+      <strong>Why two layers?</strong> Pure kNN can't work until you have labeled data. The rubric gives you day-one coverage; kNN catches cases the rubric misses or where your gut differed from the written rule.
+    </div>
+  </div>
+
+  <!-- Example -->
+  <div class="bg-white rounded-xl border shadow-sm p-6">
+    <h2 class="font-semibold text-base mb-3">Example: Jake Liu</h2>
+    <p class="text-sm text-gray-500 mb-4 italic">Dartmouth 2023 · JPMorgan Analyst · NYC · No message</p>
+    <ol class="space-y-3 text-sm">
+      <li class="flex gap-3"><span class="font-bold text-gray-400 w-5 flex-shrink-0">1.</span><span><strong>Pre-filter:</strong> Grad year 2023 → passes. NYC → passes. No hard disqualifiers.</span></li>
+      <li class="flex gap-3"><span class="font-bold text-gray-400 w-5 flex-shrink-0">2.</span><span><strong>Enrichment:</strong> Gemini rewrites: <em>"Class of 2023 Dartmouth graduate, JPMorgan analyst, NYC, IB/finance background, no message."</em></span></li>
+      <li class="flex gap-3"><span class="font-bold text-gray-400 w-5 flex-shrink-0">3.</span><span><strong>Embedding:</strong> That paragraph becomes a 3,072-number vector. Jake's point in semantic space is near other top-school/finance/NYC candidates.</span></li>
+      <li class="flex gap-3"><span class="font-bold text-gray-400 w-5 flex-shrink-0">4.</span><span><strong>Rubric:</strong> Top school ✓ · Brand employer ✓ · 2022+ ✓ · NYC ✓ · Finance ✓ · Message blank → neutral. Result: <span class="font-semibold text-emerald-700">Strong Intro</span>.</span></li>
+      <li class="flex gap-3"><span class="font-bold text-gray-400 w-5 flex-shrink-0">5.</span><span><strong>kNN:</strong> <em>"Similar to: Sarah Chen (Strong Intro, 94%), Mike Torres (Weak Intro, 87%)"</em> — confirms the tier.</span></li>
+    </ol>
+  </div>
+
+  <!-- Training -->
+  <div class="bg-white rounded-xl border shadow-sm p-6">
+    <h2 class="font-semibold text-base mb-3">How to train it</h2>
+    <p class="text-sm text-gray-600 mb-3">The rubric layer needs no training — it's ready now. The kNN layer gets better every time you label a candidate at <a href="/label" class="text-indigo-500 hover:underline">/label</a>.</p>
+    <div class="space-y-2 text-sm text-gray-600">
+      <div class="flex gap-2"><span class="text-gray-400">→</span><span>Each label you submit becomes a training example with a tier + embedding</span></div>
+      <div class="flex gap-2"><span class="text-gray-400">→</span><span>After ~20–30 labels, kNN starts providing real calibration</span></div>
+      <div class="flex gap-2"><span class="text-gray-400">→</span><span>After ~50 labels, it's meaningfully improving tier confidence</span></div>
+      <div class="flex gap-2"><span class="text-gray-400">→</span><span>Your 70 historical inbounds are the fastest way to bootstrap — import them at <a href="/import" class="text-indigo-500 hover:underline">/import</a>, then label them all</span></div>
+    </div>
+  </div>
+
+  <!-- Backtesting -->
+  <div class="bg-white rounded-xl border shadow-sm p-6">
+    <h2 class="font-semibold text-base mb-3">How to backtest it</h2>
+    <ol class="space-y-3 text-sm text-gray-600">
+      <li class="flex gap-3"><span class="font-bold text-indigo-400 w-5 flex-shrink-0">1.</span><span>Export your ~70 historical inbounds as a CSV from Airtable or Webflow</span></li>
+      <li class="flex gap-3"><span class="font-bold text-indigo-400 w-5 flex-shrink-0">2.</span><span>Upload at <a href="/import" class="text-indigo-500 hover:underline">/import</a> — they're scored automatically but never emailed</span></li>
+      <li class="flex gap-3"><span class="font-bold text-indigo-400 w-5 flex-shrink-0">3.</span><span>Check <a href="/candidates" class="text-indigo-500 hover:underline">/candidates</a> and compare model tiers to what you actually did with each person</span></li>
+      <li class="flex gap-3"><span class="font-bold text-indigo-400 w-5 flex-shrink-0">4.</span><span>Look for patterns in the disagreements — those reveal rubric gaps or edge cases to address</span></li>
+    </ol>
+    <div class="mt-4 bg-indigo-50 rounded-lg p-3 text-xs text-indigo-700">
+      The ground-truth test: feed in the 70 historical candidates cold, see what % land on the correct tier. That's your baseline accuracy. Anything under ~70% agreement is a signal the rubric prompt needs tuning.
+    </div>
+  </div>
+
+  <!-- Correcting it -->
+  <div class="bg-white rounded-xl border shadow-sm p-6">
+    <h2 class="font-semibold text-base mb-3">How to correct it when it's wrong</h2>
+    <div class="space-y-4 text-sm">
+      <div>
+        <div class="font-medium mb-1">One-off disagreement</div>
+        <div class="text-gray-600">Go to <a href="/label" class="text-indigo-500 hover:underline">/label</a> and give the correct label. kNN recalibrates — future similar candidates shift toward your correction.</div>
+      </div>
+      <div>
+        <div class="font-medium mb-1">Systematic mis-scoring (a whole category keeps being wrong)</div>
+        <div class="text-gray-600">Edit <code class="text-xs bg-gray-100 px-1 rounded">RUBRIC_SYSTEM_PROMPT</code> in <code class="text-xs bg-gray-100 px-1 rounded">knn_scorer.py</code>. Example: if state-school + Ramp keeps coming up Weak Intro but you want Strong Intro, add Ramp to the feeder company list. Redeploy and the rubric applies everywhere immediately.</div>
+      </div>
+      <div>
+        <div class="font-medium mb-1">The message field classifier is off</div>
+        <div class="text-gray-600">Gemini classifies messages as <em>specific</em>, <em>ai_slop</em>, or <em>neutral</em>. If it's misreading messages, add examples to the rubric prompt and label those candidates manually to anchor kNN.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Feeder companies -->
+  <div class="bg-white rounded-xl border shadow-sm p-6">
+    <h2 class="font-semibold text-base mb-3">Schools and companies — do you need a list?</h2>
+    <p class="text-sm text-gray-600 mb-3">Gemini already knows Goldman > regional bank, Dartmouth > state school. You don't need a separate lookup table for general pedigree.</p>
+    <p class="text-sm text-gray-600 mb-3">What <em>is</em> hardcoded in the rubric prompt is the <strong>feeder company list</strong> — companies whose SDR motion specifically produces strong candidates for your placements. The current list:</p>
+    <div class="flex flex-wrap gap-2 text-xs">
+      {% for co in ["PitchBook", "Rippling", "Ramp", "Drata", "Brex", "Attentive", "AlphaSights", "Navan", "Wunderkind", "ZoomInfo"] %}
+      <span class="bg-gray-100 text-gray-600 px-2 py-1 rounded">{{ co }}</span>
+      {% endfor %}
+    </div>
+    <p class="text-sm text-gray-500 mt-3">To add a company: edit <code class="text-xs bg-gray-100 px-1 rounded">RUBRIC_SYSTEM_PROMPT</code> in <code class="text-xs bg-gray-100 px-1 rounded">knn_scorer.py</code> and redeploy.</p>
+  </div>
+
+</div>
+{% endblock %}

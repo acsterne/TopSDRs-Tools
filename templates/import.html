@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Import Historical Candidates{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-2">Import Historical Candidates</h1>
+<p class="text-sm text-gray-500 mb-6">Upload a CSV of past inbounds to train the kNN model. These candidates are scored and labeled but <strong>never emailed or written to Airtable</strong> — they're training data only.</p>
+
+{% if imported is defined %}
+<div class="bg-emerald-50 border border-emerald-200 rounded-lg px-5 py-4 mb-6">
+  <div class="font-medium text-emerald-800">Import complete</div>
+  <div class="text-sm text-emerald-700 mt-1">{{ imported }} imported · {{ skipped }} skipped (duplicates or empty rows) · {{ total }} total rows</div>
+  <div class="text-sm text-emerald-600 mt-1">Scoring is running in the background — check <a href="/candidates" class="underline">Candidates</a> in a minute to see tiers assigned.</div>
+</div>
+{% endif %}
+
+{% if error %}
+<div class="bg-red-50 border border-red-200 rounded-lg px-5 py-3 mb-6 text-sm text-red-700">{{ error }}</div>
+{% endif %}
+
+<div class="max-w-xl bg-white rounded-xl border shadow-sm p-6 mb-8">
+  <form method="POST" enctype="multipart/form-data">
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-gray-700 mb-2">CSV file</label>
+      <input type="file" name="csv_file" accept=".csv" required
+             class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+    </div>
+    <button type="submit" class="bg-indigo-600 text-white px-5 py-2 rounded font-medium text-sm hover:bg-indigo-700">
+      Import &amp; Score
+    </button>
+  </form>
+</div>
+
+<div class="max-w-xl">
+  <h2 class="text-sm font-semibold text-gray-700 mb-2">Expected CSV columns</h2>
+  <p class="text-xs text-gray-500 mb-3">Column names are flexible — the importer tries common variations. Any unrecognized columns are ignored.</p>
+  <table class="w-full text-xs border rounded overflow-hidden">
+    <thead class="bg-gray-50 text-gray-600">
+      <tr><th class="px-3 py-2 text-left">Column</th><th class="px-3 py-2 text-left">Also recognized as</th><th class="px-3 py-2 text-left">Notes</th></tr>
+    </thead>
+    <tbody class="divide-y text-gray-600">
+      <tr><td class="px-3 py-2">Name</td><td class="px-3 py-2">Full Name</td><td class="px-3 py-2">Required if no email</td></tr>
+      <tr><td class="px-3 py-2">Email</td><td class="px-3 py-2">email</td><td class="px-3 py-2">Used to deduplicate</td></tr>
+      <tr><td class="px-3 py-2">LinkedIn</td><td class="px-3 py-2">LinkedIn URL</td><td class="px-3 py-2"></td></tr>
+      <tr><td class="px-3 py-2">College</td><td class="px-3 py-2">School</td><td class="px-3 py-2"></td></tr>
+      <tr><td class="px-3 py-2">Graduation Year</td><td class="px-3 py-2">Grad Year</td><td class="px-3 py-2">4-digit year</td></tr>
+      <tr><td class="px-3 py-2">Current Company</td><td class="px-3 py-2">Company</td><td class="px-3 py-2"></td></tr>
+      <tr><td class="px-3 py-2">Current Title</td><td class="px-3 py-2">Title</td><td class="px-3 py-2"></td></tr>
+      <tr><td class="px-3 py-2">NYC Open</td><td class="px-3 py-2">NYC</td><td class="px-3 py-2">Yes / No</td></tr>
+      <tr><td class="px-3 py-2">Message</td><td class="px-3 py-2">Optional Message</td><td class="px-3 py-2"></td></tr>
+      <tr><td class="px-3 py-2">Source</td><td class="px-3 py-2">How Found</td><td class="px-3 py-2"></td></tr>
+    </tbody>
+  </table>
+
+  <div class="mt-6 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
+    <strong>After importing:</strong> go to <a href="/label" class="underline">Label</a> and work through the historical candidates. Your labels become the kNN training set — the more you label, the better the model calibrates against the rubric. Once done, new Webflow inbounds will have neighbor context from your full history.
+  </div>
+</div>
+{% endblock %}
