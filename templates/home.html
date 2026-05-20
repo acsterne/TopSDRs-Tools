@@ -1,7 +1,19 @@
 {% extends "base.html" %}
 {% block title %}TopSDRs — Home{% endblock %}
 {% block content %}
-<h1 class="text-2xl font-bold mb-6">TopSDRs Candidate Screener</h1>
+<h1 class="text-2xl font-bold mb-2">TopSDRs Candidate Screener</h1>
+
+<div class="bg-white rounded-xl border shadow-sm p-6 mb-8">
+  <p class="text-sm text-gray-600 mb-4">This tool automates the first pass of SDR candidate screening. When someone fills out the Webflow intake form, their profile is automatically scored against the TopSDRs rubric using Gemini. High-scoring candidates surface in the outreach queue so Andrew can send a single-click email with a Calendly link. Every sent email is logged to Airtable.</p>
+  <div class="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
+    <div class="flex gap-2"><span class="text-indigo-500 font-bold flex-shrink-0">Candidates</span><span class="text-gray-500">All inbounds, sorted by recency. Shows each candidate's assigned tier.</span></div>
+    <div class="flex gap-2"><span class="text-indigo-500 font-bold flex-shrink-0">Label</span><span class="text-gray-500">Review candidates one by one and give them a 1–10 rating. Your labels train the kNN similarity model over time.</span></div>
+    <div class="flex gap-2"><span class="text-indigo-500 font-bold flex-shrink-0">Outreach</span><span class="text-gray-500">Strong Intro and Weak Intro candidates who haven't been contacted yet. Click Compose &amp; Send to fire the email via Resend.</span></div>
+    <div class="flex gap-2"><span class="text-indigo-500 font-bold flex-shrink-0">Data Flow</span><span class="text-gray-500">Visual step-by-step of how a candidate moves from Webflow form to Airtable CRM entry.</span></div>
+    <div class="flex gap-2"><span class="text-indigo-500 font-bold flex-shrink-0">Candidate Scorer</span><span class="text-gray-500">How the rubric + kNN scoring works, how to train it, backtest it, and correct it when wrong.</span></div>
+    <div class="flex gap-2"><span class="text-indigo-500 font-bold flex-shrink-0">Import for Backtesting</span><span class="text-gray-500">Upload past inbounds to bootstrap the kNN model. Scored but never emailed or written to Airtable.</span></div>
+  </div>
+</div>
 
 <div class="grid grid-cols-3 gap-4 mb-8">
   <div class="bg-white rounded-lg border p-4">
