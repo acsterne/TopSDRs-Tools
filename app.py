@@ -108,8 +108,8 @@ def _rescore_all_unlabeled(skip_id=None):
         if updates:
             psycopg2.extras.execute_values(
                 cur,
-                "UPDATE candidates SET fit_score = data.score, fit_rationale = data.rationale "
-                "FROM (VALUES %s) AS data(score, rationale, id) WHERE candidates.id = data.id",
+                "UPDATE candidates SET tier = data.tier, tier_rationale = data.rationale "
+                "FROM (VALUES %s) AS data(tier, rationale, id) WHERE candidates.id = data.id",
                 updates,
                 template="(%s, %s, %s)"
             )
@@ -302,7 +302,7 @@ def candidates():
         SELECT c.*, cf.label
           FROM candidates c
      LEFT JOIN candidate_feedback cf ON cf.candidate_id = c.id
-         ORDER BY c.fit_score DESC NULLS LAST, c.created_at DESC
+         ORDER BY c.created_at DESC
     """)
     rows = [dict(r) for r in cur.fetchall()]
     cur.close()
@@ -322,7 +322,7 @@ def label():
              SELECT 1 FROM candidate_feedback cf WHERE cf.candidate_id = c.id
          )
            AND c.embedding IS NOT NULL
-         ORDER BY c.fit_score DESC NULLS LAST, c.created_at DESC
+         ORDER BY c.created_at DESC
          LIMIT 1
     """)
     row = cur.fetchone()

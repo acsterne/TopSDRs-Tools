@@ -34,10 +34,12 @@
       <span class="text-sm text-gray-400 ml-2">{{ c.email or '' }}</span>
     </div>
     <div class="flex items-center gap-3">
-      {% if c.label %}
-        <span class="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">Label: {{ c.label }}</span>
-      {% elif c.fit_score %}
-        <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">Score: {{ c.fit_score }}</span>
+      {% if c.tier == 'strong_intro' %}
+        <span class="text-xs bg-emerald-600 text-white px-2 py-0.5 rounded-full">Strong Intro</span>
+      {% elif c.tier == 'weak_intro' %}
+        <span class="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">Weak Intro</span>
+      {% elif c.tier %}
+        <span class="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{{ c.tier | replace('_', ' ') | title }}</span>
       {% endif %}
       <span class="text-xs text-gray-400">{{ c.status }}</span>
     </div>

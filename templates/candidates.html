@@ -10,18 +10,20 @@
       <span class="text-sm text-gray-400 ml-2">{{ c.email or '' }}</span>
     </div>
     <div class="flex items-center gap-3">
-      {% if c.label %}
-        <span class="text-xs font-semibold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">Label: {{ c.label }}</span>
-      {% elif c.fit_score %}
-        {% if c.fit_score >= 7 %}
-          <span class="text-xs font-semibold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full opacity-75">{{ c.fit_score }}</span>
-        {% elif c.fit_score >= 5 %}
-          <span class="text-xs font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full opacity-75">{{ c.fit_score }}</span>
-        {% else %}
-          <span class="text-xs font-semibold bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full opacity-75">{{ c.fit_score }}</span>
-        {% endif %}
+      {% if c.tier == 'strong_intro' %}
+        <span class="text-xs font-semibold bg-emerald-600 text-white px-2 py-0.5 rounded-full">Strong Intro</span>
+      {% elif c.tier == 'weak_intro' %}
+        <span class="text-xs font-semibold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">Weak Intro</span>
+      {% elif c.tier == 'nurture' %}
+        <span class="text-xs font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Nurture</span>
+      {% elif c.tier == 'senior_redirect' %}
+        <span class="text-xs font-semibold bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">Senior Redirect</span>
+      {% elif c.tier == 'polite_decline' %}
+        <span class="text-xs font-semibold bg-red-100 text-red-600 px-2 py-0.5 rounded-full">Decline</span>
+      {% elif c.tier == 'silent_skip' %}
+        <span class="text-xs font-semibold bg-gray-100 text-gray-400 px-2 py-0.5 rounded-full">Skip</span>
       {% else %}
-        <span class="text-xs text-gray-300">unscored</span>
+        <span class="text-xs text-gray-300">scoring...</span>
       {% endif %}
       <span class="text-xs text-gray-400">{{ c.status }}</span>
     </div>

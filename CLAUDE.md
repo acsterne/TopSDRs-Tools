@@ -26,6 +26,7 @@ DATABASE_URL=postgresql://... GEMINI_API_KEY=... RESEND_API_KEY=... \
 - `templates/outreach.html` — Queue of scored candidates awaiting outreach
 - `templates/outreach_review.html` — Review/edit pre-filled standard email before sending
 - `DEPLOY.md` — Full Railway/Resend/Airtable/Webflow setup guide
+- `templates/how_it_works.html` — Public explainer page at `/how-it-works`
 - `docs/workflow.html` — Visual flowchart of the full candidate pipeline
 
 ## Workflow
@@ -41,4 +42,3 @@ DATABASE_URL=postgresql://... GEMINI_API_KEY=... RESEND_API_KEY=... \
 
 ## TODO
 - Add backfill script for past Webflow submissions
-- Build out templates (home, candidates list, label UI, candidate detail)
