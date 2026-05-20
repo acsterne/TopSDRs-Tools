@@ -1,6 +1,6 @@
 """
 TopSDRs Tools — Flask app
-Webflow webhook → Postgres → embed → kNN score → review UI
+Webflow webhook → Postgres → embed → kNN score → outreach approval → Resend
 """
 import hashlib
 import hmac
@@ -8,9 +8,11 @@ import json
 import os
 import threading
 
+import anthropic
 import psycopg2
 import psycopg2.extras
-from flask import Flask, abort, jsonify, redirect, render_template, request, url_for
+import resend
+from flask import Flask, abort, flash, jsonify, redirect, render_template, request, url_for
 
 import knn_scorer
 
@@ -18,6 +20,11 @@ app = Flask(__name__)
 
 DATABASE_URL           = os.environ.get("DATABASE_URL")
 WEBFLOW_WEBHOOK_SECRET = os.environ.get("WEBFLOW_WEBHOOK_SECRET", "")
+RESEND_API_KEY         = os.environ.get("RESEND_API_KEY", "")
+OUTREACH_FROM_EMAIL    = os.environ.get("OUTREACH_FROM_EMAIL", "hello@example.com")
+CALENDLY_LINK          = os.environ.get("CALENDLY_LINK", "")
+
+resend.api_key = RESEND_API_KEY
 
 
 # ---------------------------------------------------------------------------
@@ -283,6 +290,154 @@ def candidate_detail(candidate_id):
     cur.close()
     conn.close()
     return render_template("candidate_detail.html", candidate=dict(row))
+
+
+# ---------------------------------------------------------------------------
+# Outreach
+# ---------------------------------------------------------------------------
+
+OUTREACH_SCORE_THRESHOLD = 7
+
+
+def _draft_outreach_email(candidate: dict) -> tuple[str, str]:
+    """Ask Claude to draft a personalized outreach email. Returns (subject, body)."""
+    client = anthropic.Anthropic()
+    profile = candidate.get("enriched_text") or candidate.get("full_name") or "the candidate"
+    calendly = CALENDLY_LINK or "[CALENDLY LINK]"
+    msg = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=400,
+        messages=[{
+            "role": "user",
+            "content": f"""Write a short, warm outreach email to an SDR candidate from a recruiter.
+
+Candidate profile:
+{profile}
+
+Rules:
+- 3–4 sentences max, no fluff
+- Reference something specific from their profile (role, experience, tools)
+- End with a clear CTA: book a 15-min call via this Calendly link: {calendly}
+- Do not use the word "excited" or "passionate"
+- Plain text only, no markdown, no subject line in the body
+
+Return JSON with exactly two keys: "subject" and "body"."""
+        }]
+    )
+    import re
+    text = msg.content[0].text.strip()
+    # Strip markdown code fences if present
+    text = re.sub(r"^```(?:json)?\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+    parsed = json.loads(text)
+    return parsed["subject"], parsed["body"]
+
+
+@app.route("/outreach")
+def outreach_queue():
+    """Candidates scoring ≥ threshold that haven't been contacted yet."""
+    conn = get_db()
+    cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
+        SELECT c.*, cf.label
+          FROM candidates c
+     LEFT JOIN candidate_feedback cf ON cf.candidate_id = c.id
+         WHERE (cf.label >= %s OR (cf.label IS NULL AND c.fit_score >= %s))
+           AND c.outreach_sent_at IS NULL
+           AND c.status != 'rejected'
+         ORDER BY COALESCE(cf.label, c.fit_score) DESC NULLS LAST
+    """, (OUTREACH_SCORE_THRESHOLD, OUTREACH_SCORE_THRESHOLD))
+    queue = [dict(r) for r in cur.fetchall()]
+
+    cur.execute("""
+        SELECT COUNT(*) AS sent_count
+          FROM candidates
+         WHERE outreach_sent_at IS NOT NULL
+    """)
+    sent_count = cur.fetchone()["sent_count"]
+    cur.close()
+    conn.close()
+    return render_template("outreach.html", queue=queue, sent_count=sent_count,
+                           threshold=OUTREACH_SCORE_THRESHOLD)
+
+
+@app.route("/outreach/<int:candidate_id>/draft", methods=["POST"])
+def outreach_draft(candidate_id):
+    """Generate a Claude email draft for a candidate."""
+    conn = get_db()
+    cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT * FROM candidates WHERE id = %s", (candidate_id,))
+    row = cur.fetchone()
+    if not row:
+        abort(404)
+    candidate = dict(row)
+    cur.close()
+
+    subject, body = _draft_outreach_email(candidate)
+
+    cur2 = conn.cursor()
+    cur2.execute("""
+        UPDATE candidates SET outreach_subject = %s, outreach_body = %s WHERE id = %s
+    """, (subject, body, candidate_id))
+    conn.commit()
+    cur2.close()
+    conn.close()
+    return redirect(url_for("outreach_review", candidate_id=candidate_id))
+
+
+@app.route("/outreach/<int:candidate_id>/review")
+def outreach_review(candidate_id):
+    """Show the drafted email for review/edit before sending."""
+    conn = get_db()
+    cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT * FROM candidates WHERE id = %s", (candidate_id,))
+    row = cur.fetchone()
+    if not row:
+        abort(404)
+    cur.close()
+    conn.close()
+    return render_template("outreach_review.html", candidate=dict(row))
+
+
+@app.route("/outreach/<int:candidate_id>/send", methods=["POST"])
+def outreach_send(candidate_id):
+    """Send the (possibly edited) email via Resend."""
+    subject = request.form.get("subject", "").strip()
+    body    = request.form.get("body", "").strip()
+
+    conn = get_db()
+    cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT * FROM candidates WHERE id = %s", (candidate_id,))
+    row = cur.fetchone()
+    if not row:
+        abort(404)
+    candidate = dict(row)
+
+    if not candidate.get("email"):
+        abort(400, "Candidate has no email address")
+
+    resend.Emails.send({
+        "from": OUTREACH_FROM_EMAIL,
+        "to": candidate["email"],
+        "subject": subject,
+        "text": body,
+    })
+
+    cur2 = conn.cursor()
+    cur2.execute("""
+        UPDATE candidates
+           SET outreach_subject  = %s,
+               outreach_body     = %s,
+               outreach_sent_at  = NOW(),
+               status            = 'outreach_sent',
+               updated_at        = NOW()
+         WHERE id = %s
+    """, (subject, body, candidate_id))
+    conn.commit()
+    cur2.close()
+    cur.close()
+    conn.close()
+    return redirect(url_for("outreach_queue"))
 
 
 # ---------------------------------------------------------------------------

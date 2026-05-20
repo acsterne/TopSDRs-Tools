@@ -21,7 +21,12 @@ CREATE TABLE IF NOT EXISTS candidates (
     fit_rationale   TEXT,           -- e.g. "Similar to Jane D. (9), John S. (8) [match 84%]"
 
     -- Status
-    status          TEXT NOT NULL DEFAULT 'new',  -- new | reviewed | hired | rejected | archived
+    status          TEXT NOT NULL DEFAULT 'new',  -- new | reviewed | outreach_sent | hired | rejected | archived
+
+    -- Outreach
+    outreach_subject    TEXT,
+    outreach_body       TEXT,       -- Claude-drafted email, editable before send
+    outreach_sent_at    TIMESTAMPTZ,
 
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()

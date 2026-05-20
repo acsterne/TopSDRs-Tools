@@ -3,3 +3,4 @@ psycopg2-binary
 gunicorn
 requests
 anthropic
+resend
